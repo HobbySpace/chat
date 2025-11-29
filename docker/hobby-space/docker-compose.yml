@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # PostgreSQL база данных
+  chatdb:
+    image: postgres:16-alpine
+    container_name: chatdb
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_LOGIN}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_LOGIN} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tinode_net
+
+  # Инициализатор БД (запускается один раз)
+  dbinit:
+    build:
+      context: ../..
+      dockerfile: docker/hobby-space/dbinit/Dockerfile
+    container_name: dbinit
+    depends_on:
+      chatdb:
+        condition: service_healthy
+    environment:
+      - DB_NAME=${DB_NAME}
+      - DB_LOGIN=${DB_LOGIN}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - UID_KEY=${UID_KEY}
+      - ROOT_USER_PASSWORD=${ROOT_USER_PASSWORD}
+    volumes:
+      - ./tinode_db.conf:/app/tinode_db.conf.template:ro
+    networks:
+      - tinode_net
+    restart: "no"
+
+  # Сервер Tinode
+  chatserver:
+    build:
+      context: ../..
+      dockerfile: docker/hobby-space/server/Dockerfile
+    container_name: chatserver
+    depends_on:
+      - dbinit
+    environment:
+      - API_KEY_SALT=${API_KEY_SALT}
+      - TOKEN_KEY=${TOKEN_KEY}
+      - UID_KEY=${UID_KEY}
+      - DB_NAME=${DB_NAME}
+      - DB_LOGIN=${DB_LOGIN}
+      - DB_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - ./server.conf:/app/server.conf.template:ro
+      - uploads_data:/app/uploads
+    ports:
+      - "6060:6060"   # HTTP/WebSocket
+      - "16060:16060" # gRPC
+    networks:
+      - tinode_net
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  uploads_data:
+
+networks:
+  tinode_net:
+    driver: bridge
+
