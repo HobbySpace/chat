@@ -1,0 +1,6 @@
+# IDE
+.idea/
+
+# Local configuration files
+*.local.conf
+
