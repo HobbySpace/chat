@@ -23,7 +23,7 @@ services:
   dbinit:
     build:
       context: ../..
-      dockerfile: docker/hobby-space/dbinit/Dockerfile
+      dockerfile: docker/hobbyspace-chat/dbinit/Dockerfile
     container_name: dbinit
     depends_on:
       chatdb:
@@ -44,7 +44,7 @@ services:
   chatserver:
     build:
       context: ../..
-      dockerfile: docker/hobby-space/server/Dockerfile
+      dockerfile: docker/hobbyspace-chat/server/Dockerfile
     container_name: chatserver
     depends_on:
       - dbinit
