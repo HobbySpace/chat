@@ -11,6 +11,8 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "6069:5432"   # PostgreSQL (6069 на хосте -> 5432 в контейнере)
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_LOGIN} -d ${DB_NAME}"]
       interval: 5s

@@ -315,13 +315,33 @@ func (a *adapter) CreateDb(reset bool) error {
 	}
 
 	if _, err = a.db.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s WITH ENCODING utf8;", a.dbName)); err != nil {
-		return err
+		// Если база уже существует, это нормально - продолжаем создание схемы
+		if !isDbAlreadyExists(err) {
+			return err
+		}
+		// База уже существует, но схема может быть не создана, продолжаем
 	}
 
 	a.poolConfig.ConnConfig.Database = a.dbName
 	a.db, err = pgxpool.ConnectConfig(ctx, a.poolConfig)
 	if err != nil {
 		return err
+	}
+
+	// Проверяем, существует ли уже таблица kvmeta (признак того, что схема создана)
+	var tableExists bool
+	checkErr := a.db.QueryRow(ctx,
+		"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'kvmeta')").Scan(&tableExists)
+
+	// Если таблица kvmeta существует, проверяем версию базы данных
+	if checkErr == nil && tableExists {
+		var version string
+		versionErr := a.db.QueryRow(ctx, `SELECT "value" FROM kvmeta WHERE "key" = $1`, "version").Scan(&version)
+		// Если версия существует, значит схема уже создана полностью
+		if versionErr == nil {
+			return nil
+		}
+		// Если версии нет, продолжаем создание схемы
 	}
 
 	if tx, err = a.db.Begin(ctx); err != nil {
@@ -3496,6 +3516,16 @@ func isMissingDb(err error) bool {
 
 	msg := err.Error()
 	return strings.Contains(msg, "SQLSTATE 3D000")
+}
+
+func isDbAlreadyExists(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := err.Error()
+	// SQLSTATE 42P04 = duplicate_database
+	return strings.Contains(msg, "SQLSTATE 42P04") || strings.Contains(msg, "already exists")
 }
 
 // setConnStr converts a config structure to a DSN connection string.

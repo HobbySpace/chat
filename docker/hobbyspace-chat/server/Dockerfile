@@ -36,8 +36,8 @@ COPY --from=builder /build/tinode ./tinode
 # Делаем исполняемым
 RUN chmod +x ./tinode
 
-# Создаем директорию для загрузок
-RUN mkdir -p ./uploads
+# Создаем директории для загрузок и статического контента
+RUN mkdir -p ./uploads ./static
 
 # Скрипт для подстановки переменных окружения и запуска
 RUN echo '#!/bin/sh' > /app/entrypoint.sh && \

@@ -2,7 +2,8 @@
 FROM golang:1.23-alpine AS builder
 
 # Установка зависимостей для сборки
-RUN apk add --no-cache git make gcc musl-dev
+# postgresql-dev нужен для сборки с CGO_ENABLED=1 и тегом postgres
+RUN apk add --no-cache git make gcc musl-dev postgresql-dev
 
 # Разрешаем Go автоматически скачивать нужную версию инструментария
 ENV GOTOOLCHAIN=auto
@@ -19,34 +20,31 @@ COPY server ./server
 COPY pbx ./pbx
 
 # Собираем tinode-db с поддержкой PostgreSQL
+# Сохраняем бинарник с другим именем, чтобы избежать конфликта с директорией
 RUN cd tinode-db && \
     CGO_ENABLED=1 go build -tags postgres \
-    -o /build/tinode-db .
+    -o /build/tinode-db-bin .
 
 # Финальный образ
 FROM alpine:3.22
 
 # Установка необходимых пакетов
-RUN apk add --no-cache ca-certificates bash gettext
+# postgresql-libs нужен для бинарника, собранного с CGO_ENABLED=1 и тегом postgres
+# binutils нужен для ldd и readelf для диагностики
+RUN apk add --no-cache ca-certificates bash gettext postgresql-libs binutils
 
 WORKDIR /app
 
-# Копируем собранный бинарник
-COPY --from=builder /build/tinode-db ./tinode-db
+# Копируем собранный бинарник с правами на выполнение
+COPY --from=builder --chmod=755 /build/tinode-db-bin /app/tinode-db
 
-# Делаем исполняемым
-RUN chmod +x ./tinode-db
+# Дополнительно убеждаемся, что файл исполняемый
+RUN chmod +x /app/tinode-db
 
-# Скрипт для подстановки переменных окружения и запуска
-# Используем printf для правильной обработки переменных (они подставляются при запуске)
-RUN printf '#!/bin/sh\n' > /app/entrypoint.sh && \
-    printf 'set -e\n' >> /app/entrypoint.sh && \
-    printf 'echo "Substituting environment variables in config..."\n' >> /app/entrypoint.sh && \
-    printf 'envsubst < /app/tinode_db.conf.template > /app/tinode_db.conf\n' >> /app/entrypoint.sh && \
-    printf 'echo "Initializing database..."\n' >> /app/entrypoint.sh && \
-    printf './tinode-db -config=/app/tinode_db.conf -add_root=root:"$ROOT_USER_PASSWORD"\n' >> /app/entrypoint.sh && \
-    printf 'echo "Database initialization completed!"\n' >> /app/entrypoint.sh && \
-    chmod +x /app/entrypoint.sh
+# Копируем entrypoint скрипт
+# Контекст сборки - корень проекта, поэтому путь относительно него
+COPY docker/hobbyspace-chat/dbinit/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 
